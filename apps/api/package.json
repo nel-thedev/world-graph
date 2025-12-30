@@ -7,7 +7,8 @@
       "build": "tsc -p tsconfig.json",
       "start": "node dist/index.js",
       "db:constraints": "tsx src/scripts/apply-constraints.ts",
-      "db:seed": "tsx src/scripts/seed-minimal.ts"
+      "db:seed": "tsx src/scripts/seed-minimal.ts",
+      "db:seed:ww": "tsx src/scripts/seed-ww1-ww2.ts"
     },
     "dependencies": {
       "fastify": "^4.28.1",
