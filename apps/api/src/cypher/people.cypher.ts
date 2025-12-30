@@ -34,18 +34,37 @@ export const CYPHER_WHY_CONNECTED = `
 MATCH (a:Person {id:$personAId})
 MATCH (b:Person {id:$personBId})
 MATCH (a)-[:CLAIM_SUBJECT]->(ca:Claim)-[:CLAIM_OBJECT]->(e:Event)<-[:CLAIM_OBJECT]-(cb:Claim)<-[:CLAIM_SUBJECT]-(b)
-WHERE
-  ($includePending = true OR (ca.status = 'APPROVED' AND cb.status = 'APPROVED'))
-OPTIONAL MATCH (ca)-[:HAS_EVIDENCE]->(sa:Source)
-OPTIONAL MATCH (cb)-[:HAS_EVIDENCE]->(sb:Source)
-WITH e, ca, cb,
+WHERE ($includePending = true OR (ca.status = 'APPROVED' AND cb.status = 'APPROVED'))
+WITH e, collect(DISTINCT ca) AS caList, collect(DISTINCT cb) AS cbList
+UNWIND caList AS caItem
+WITH e, cbList, caItem
+ORDER BY coalesce(caItem.score, 0) DESC, caItem.createdAt DESC
+WITH e, cbList, collect(caItem)[0] AS caBest
+UNWIND cbList AS cbItem
+WITH e, caBest, cbItem
+ORDER BY coalesce(cbItem.score, 0) DESC, cbItem.createdAt DESC
+WITH e, caBest, collect(cbItem)[0] AS cbBest
+OPTIONAL MATCH (caBest)-[:HAS_EVIDENCE]->(sa:Source)
+OPTIONAL MATCH (cbBest)-[:HAS_EVIDENCE]->(sb:Source)
+WITH e, caBest, cbBest,
      collect(DISTINCT sa)[0..3] AS aEvidencePreview,
      collect(DISTINCT sb)[0..3] AS bEvidencePreview
 ORDER BY e.startDate DESC
 LIMIT toInteger($limitEvents)
 RETURN e,
-       ca { .id, .relationshipType, .status, .score, .uniqueVoters, .evidenceCount } AS claimA,
-       cb { .id, .relationshipType, .status, .score, .uniqueVoters, .evidenceCount } AS claimB,
+       caBest { .id, .relationshipType, .status, .score, .uniqueVoters, .evidenceCount } AS claimA,
+       cbBest { .id, .relationshipType, .status, .score, .uniqueVoters, .evidenceCount } AS claimB,
        aEvidencePreview,
        bEvidencePreview
+`;
+
+export const CYPHER_SHARED_EVENTS_PREVIEW = `
+MATCH (a:Person {id:$personAId})
+MATCH (b:Person {id:$personBId})
+MATCH (a)-[:CLAIM_SUBJECT]->(ca:Claim)-[:CLAIM_OBJECT]->(e:Event)<-[:CLAIM_OBJECT]-(:Claim)<-[:CLAIM_SUBJECT]-(b)
+WHERE ($includePending = true OR ca.status = 'APPROVED')
+WITH DISTINCT e
+ORDER BY e.startDate DESC
+LIMIT toInteger($limit)
+RETURN e
 `;

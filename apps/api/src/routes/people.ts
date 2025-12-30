@@ -4,6 +4,7 @@ import { runRead } from "../neo4j.js";
 import {
   CYPHER_PERSON_CONNECTIONS,
   CYPHER_PERSON_NEIGHBORHOOD,
+  CYPHER_SHARED_EVENTS_PREVIEW,
   CYPHER_WHY_CONNECTED
 } from "../cypher/people.cypher.js";
 
@@ -68,11 +69,16 @@ export async function peopleRoutes(app: FastifyInstance) {
     const rows = await runRead(
       CYPHER_PERSON_CONNECTIONS,
       { personId: params.data.id, ...query.data },
-      (r) => ({
-        person: r.get("other").properties,
-        sharedEventCount: r.get("sharedEventCount"),
-        sharedStrength: r.get("sharedStrength")
-      })
+      (r) => {
+        const p = r.get("other").properties;
+        return {
+          id: p.id,
+          name: p.name,
+          person: p,
+          sharedEventCount: r.get("sharedEventCount"),
+          sharedStrength: r.get("sharedStrength")
+        };
+      }      
     );
 
     return { results: rows };
@@ -98,4 +104,24 @@ export async function peopleRoutes(app: FastifyInstance) {
 
     return { results: rows };
   });
+
+  app.get("/people/:aId/shared-events/:bId", async (req, res) => {
+    const params = z.object({ aId: z.string().min(1), bId: z.string().min(1) }).safeParse(req.params);
+    const query = z.object({
+      includePending: z.coerce.boolean().optional().default(false),
+      limit: z.coerce.number().int().min(1).max(100).optional().default(10)
+    }).safeParse(req.query);
+  
+    if (!params.success) return res.status(400).send({ error: params.error.flatten() });
+    if (!query.success) return res.status(400).send({ error: query.error.flatten() });
+  
+    const rows = await runRead(
+      CYPHER_SHARED_EVENTS_PREVIEW,
+      { personAId: params.data.aId, personBId: params.data.bId, ...query.data },
+      (r) => r.get("e").properties
+    );
+  
+    return { results: rows };
+  });
+  
 }
