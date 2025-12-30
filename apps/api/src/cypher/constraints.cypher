@@ -1,0 +1,10 @@
+CREATE CONSTRAINT person_id IF NOT EXISTS FOR (p:Person) REQUIRE p.id IS UNIQUE;
+CREATE CONSTRAINT event_id  IF NOT EXISTS FOR (e:Event)  REQUIRE e.id IS UNIQUE;
+CREATE CONSTRAINT claim_id  IF NOT EXISTS FOR (c:Claim)  REQUIRE c.id IS UNIQUE;
+CREATE CONSTRAINT user_id   IF NOT EXISTS FOR (u:User)   REQUIRE u.id IS UNIQUE;
+CREATE CONSTRAINT source_id IF NOT EXISTS FOR (s:Source) REQUIRE s.id IS UNIQUE;
+
+CREATE INDEX person_name IF NOT EXISTS FOR (p:Person) ON (p.name);
+CREATE INDEX event_name  IF NOT EXISTS FOR (e:Event)  ON (e.name);
+CREATE INDEX event_dates IF NOT EXISTS FOR (e:Event)  ON (e.startDate);
+CREATE INDEX claim_status IF NOT EXISTS FOR (c:Claim) ON (c.status);
