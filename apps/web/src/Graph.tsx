@@ -40,7 +40,6 @@ export function Graph({ data, onSelectNode }: Props) {
     const nodesArr = data.nodes ?? [];
     const edgesArr = data.edges ?? [];
 
-    // Helpful dev hint if you're still returning the old payload
     if (!Array.isArray(nodesArr) || !Array.isArray(edgesArr)) {
       // eslint-disable-next-line no-console
       console.warn("Graph received non-GraphDTO payload:", data);
@@ -96,7 +95,7 @@ export function Graph({ data, onSelectNode }: Props) {
         name: "fcose",
         animate: true,
         animationDuration: 450,
-        fit: false,
+        fit: false, // don't snap camera on relax
         padding: 30,
         eles: neighborhood,
         quality: "default",
@@ -176,28 +175,28 @@ export function Graph({ data, onSelectNode }: Props) {
           },
           {
             selector: ".focused",
-            style: {
-              "border-width": 4
-            }
+            style: { "border-width": 4 }
           },
           {
             selector: ".dim",
-            style: {
-              opacity: 0.2
-            }
+            style: { opacity: 0.2 }
           }
         ]
       });
 
       const cy = cyRef.current;
-
       runFullLayout(cy);
 
-      let isDragging = false;
+      // ✅ Correct drag detection:
+      // - grab does NOT mean drag
+      // - only if we see a "drag" event do we treat it as dragging
+      let didDrag = false;
 
       cy.on("grab", "node", () => {
-        isDragging = true;
+        didDrag = false;
         if (containerRef.current) containerRef.current.style.cursor = "grabbing";
+
+        // stop any running layout that might fight the drag
         try {
           const currentLayout = (cy as any).layout?.();
           currentLayout?.stop?.();
@@ -206,25 +205,38 @@ export function Graph({ data, onSelectNode }: Props) {
         }
       });
 
+      cy.on("drag", "node", () => {
+        didDrag = true;
+      });
+
       cy.on("free", "node", () => {
         if (containerRef.current) containerRef.current.style.cursor = "grab";
       });
 
       cy.on("dragfree", "node", (evt) => {
         const nodeId = evt.target.id();
-        setTimeout(() => {
-          isDragging = false;
-          runRelaxLayout(cy, nodeId);
-        }, 0);
+        // only relax if it actually moved
+        if (!didDrag) return;
+        setTimeout(() => runRelaxLayout(cy, nodeId), 0);
       });
 
       cy.on("tap", "node", (evt) => {
-        if (isDragging) return;
+        // If it was a drag, ignore the tap that often fires after drag
+        if (didDrag) {
+          // reset after the tap cycle
+          setTimeout(() => {
+            didDrag = false;
+          }, 0);
+          return;
+        }
 
         const n = evt.target;
         const type = n.data("type") as "person" | "event";
         const id = n.id();
         const label = n.data("label") as string;
+
+        // Immediate feedback: center camera on clicked node
+        cy.animate({ center: { eles: n }, duration: 220 }, { easing: "ease-in-out" });
 
         cy.elements().removeClass("dim focused");
         n.addClass("focused");
@@ -258,7 +270,7 @@ export function Graph({ data, onSelectNode }: Props) {
     <div
       ref={containerRef}
       style={{
-        height: 520,
+        height: "100%",
         width: "100%",
         border: "1px solid #eee",
         borderRadius: 12,
