@@ -4,35 +4,32 @@ import fcose from "cytoscape-fcose";
 
 cytoscape.use(fcose);
 
-type PersonNode = { id: string; name: string };
-type EventNode = { id: string; name: string; eventType?: string; startDate?: any };
-
-export type GraphPayload = {
-  person: PersonNode;
-  events: EventNode[];
-  people: PersonNode[];
+export type GraphDTO = {
+  nodes?: {
+    id: string;
+    kind: "person" | "event";
+    label: string;
+    meta?: Record<string, any>;
+  }[];
+  edges?: {
+    id: string;
+    source: string;
+    target: string;
+    kind: "claim";
+    weight: number;
+    meta?: {
+      relationshipType: string;
+      status: string;
+      score: number;
+    };
+  }[];
 };
 
 type Props = {
-  data: GraphPayload | null;
+  data: GraphDTO | null;
   onSelectNode?: (node: { type: "person" | "event"; id: string; label: string }) => void;
 };
 
-function fmtDate(d: any) {
-  if (!d) return "";
-  if (typeof d === "string") return d;
-  if (d.year && d.month && d.day) {
-    return `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
-  }
-  return "";
-}
-
-/**
- * “Relaxation” behavior:
- * - User drags a node freely (no layout fighting them)
- * - On release (dragfree), we gently re-run a short layout on the dragged node’s neighborhood
- *   so nearby nodes “follow” and the graph settles (springy feel).
- */
 export function Graph({ data, onSelectNode }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
@@ -40,48 +37,37 @@ export function Graph({ data, onSelectNode }: Props) {
   const elements = useMemo(() => {
     if (!data) return [];
 
-    const nodes: any[] = [];
-    const edges: any[] = [];
+    const nodesArr = data.nodes ?? [];
+    const edgesArr = data.edges ?? [];
 
-    nodes.push({
-      data: { id: data.person.id, label: data.person.name, type: "person" }
-    });
-
-    for (const e of data.events) {
-      nodes.push({
-        data: {
-          id: e.id,
-          label: e.name,
-          type: "event",
-          subtitle: e.eventType ?? "",
-          date: fmtDate(e.startDate)
-        }
-      });
-
-      edges.push({
-        data: {
-          id: `${data.person.id}__${e.id}`,
-          source: data.person.id,
-          target: e.id,
-          type: "person-event"
-        }
-      });
+    // Helpful dev hint if you're still returning the old payload
+    if (!Array.isArray(nodesArr) || !Array.isArray(edgesArr)) {
+      // eslint-disable-next-line no-console
+      console.warn("Graph received non-GraphDTO payload:", data);
+      return [];
     }
 
-    for (const p of data.people) {
-      nodes.push({
-        data: { id: p.id, label: p.name, type: "person" }
-      });
+    const nodes = nodesArr.map((n) => ({
+      data: {
+        id: n.id,
+        label: n.label,
+        type: n.kind,
+        meta: n.meta ?? {}
+      }
+    }));
 
-      edges.push({
-        data: {
-          id: `${p.id}__${data.person.id}`,
-          source: p.id,
-          target: data.person.id,
-          type: "person-person"
-        }
-      });
-    }
+    const edges = edgesArr.map((e) => ({
+      data: {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: e.kind,
+        weight: typeof e.weight === "number" ? e.weight : 0,
+        status: e.meta?.status ?? "UNKNOWN",
+        relationshipType: e.meta?.relationshipType ?? "UNKNOWN",
+        score: e.meta?.score ?? e.weight ?? 0
+      }
+    }));
 
     return [...nodes, ...edges];
   }, [data]);
@@ -93,7 +79,6 @@ export function Graph({ data, onSelectNode }: Props) {
     const runFullLayout = (cy: Core) => {
       cy.layout({
         name: "fcose",
-        // @ts-ignore
         animate: true,
         animationDuration: 700,
         fit: true,
@@ -101,30 +86,21 @@ export function Graph({ data, onSelectNode }: Props) {
       }).run();
     };
 
-    // Short, gentle “relaxation” pass:
-    // only on a small neighborhood, fewer iterations, so it feels like a spring settle.
     const runRelaxLayout = (cy: Core, nodeId: string) => {
       const n = cy.getElementById(nodeId);
       if (!n || n.empty()) return;
 
-      const neighborhood = n.closedNeighborhood(); // node + adjacent nodes/edges
+      const neighborhood = n.closedNeighborhood();
 
-      // If graph is tiny, neighborhood might be too small; still fine.
       cy.layout({
         name: "fcose",
         animate: true,
         animationDuration: 450,
-        fit: false, // IMPORTANT: don't auto-fit on relax (prevents camera snapping)
+        fit: false,
         padding: 30,
-
-        // fcose supports restricting layout to a subset:
-        // (works in cytoscape layouts that accept `eles`)
         eles: neighborhood,
-
-        // Gentle settle; low effort
         quality: "default",
         randomize: false,
-        // Smaller cooldown helps it stop quickly
         coolingFactor: 0.95
       } as any).run();
     };
@@ -136,7 +112,7 @@ export function Graph({ data, onSelectNode }: Props) {
 
         userPanningEnabled: true,
         userZoomingEnabled: true,
-        // userPinchingEnabled: true,
+        userPinchingEnabled: true,
         boxSelectionEnabled: false,
         autoungrabify: false,
         autounselectify: false,
@@ -152,16 +128,15 @@ export function Graph({ data, onSelectNode }: Props) {
               "text-valign": "center",
               "text-halign": "center",
               "text-wrap": "wrap",
-              "text-max-width": '140',
+              "text-max-width": 150,
               "background-color": "#fff",
               "border-width": 2,
               "border-color": "#222",
               width: 48,
               height: 48,
               events: "yes",
-              // subtle visual smoothness for hover/focus/dim changes
-              "transition-property": "opacity, border-width",
-              "transition-duration": 180
+              "transition-property": "opacity, border-width, border-color",
+              "transition-duration": "180ms"
             }
           },
           {
@@ -176,22 +151,40 @@ export function Graph({ data, onSelectNode }: Props) {
           {
             selector: "edge",
             style: {
-              width: 2,
+              width: "mapData(weight, -10, 10, 1, 6)",
               "line-color": "#999",
               "target-arrow-shape": "none",
               "curve-style": "bezier",
               events: "no",
-              "transition-property": "opacity",
-              "transition-duration": 180
+              opacity: 0.9,
+              "transition-property": "opacity, width",
+              "transition-duration": "180ms"
+            }
+          },
+          {
+            selector: 'edge[status="PENDING"]',
+            style: {
+              "line-style": "dashed",
+              opacity: 0.6
+            }
+          },
+          {
+            selector: 'edge[status="REJECTED"]',
+            style: {
+              opacity: 0.25
             }
           },
           {
             selector: ".focused",
-            style: { "border-width": 4 }
+            style: {
+              "border-width": 4
+            }
           },
           {
             selector: ".dim",
-            style: { opacity: 0.25 }
+            style: {
+              opacity: 0.2
+            }
           }
         ]
       });
@@ -200,17 +193,14 @@ export function Graph({ data, onSelectNode }: Props) {
 
       runFullLayout(cy);
 
-      // Track dragging so "tap" doesn't fire after a drag
       let isDragging = false;
 
-      cy.on("grab", "node", (evt) => {
+      cy.on("grab", "node", () => {
         isDragging = true;
         if (containerRef.current) containerRef.current.style.cursor = "grabbing";
-
-        // Stop any running layout so it doesn't fight the drag
-        const running = (cy as any).layout && (cy as any).layout();
         try {
-          running?.stop?.();
+          const currentLayout = (cy as any).layout?.();
+          currentLayout?.stop?.();
         } catch {
           // ignore
         }
@@ -220,11 +210,8 @@ export function Graph({ data, onSelectNode }: Props) {
         if (containerRef.current) containerRef.current.style.cursor = "grab";
       });
 
-      // On release, do the gentle neighborhood relaxation
       cy.on("dragfree", "node", (evt) => {
         const nodeId = evt.target.id();
-
-        // Wait a tick so tap doesn't trigger immediately after drag
         setTimeout(() => {
           isDragging = false;
           runRelaxLayout(cy, nodeId);
@@ -246,49 +233,38 @@ export function Graph({ data, onSelectNode }: Props) {
 
         onSelectNode?.({ type, id, label });
       });
+
+      cy.on("tap", (evt) => {
+        if (evt.target !== cy) return;
+        cy.elements().removeClass("dim focused");
+      });
     } else {
       const cy = cyRef.current;
+
+      const prevPan = cy.pan();
+      const prevZoom = cy.zoom();
+
       cy.elements().remove();
       cy.add(elements);
 
-      // Full layout only when graph data changes
+      cy.pan(prevPan);
+      cy.zoom(prevZoom);
+
       runFullLayout(cy);
     }
   }, [elements, onSelectNode]);
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, gap: 8 }}>
-        <button
-          onClick={() => {
-            const cy = cyRef.current;
-            if (!cy) return;
-            cy.layout({
-              name: "fcose",
-              // @ts-ignore
-              animate: true,
-              animationDuration: 700,
-              fit: true,
-              padding: 30
-            }).run();
-          }}
-          style={{ padding: "8px 12px", borderRadius: 8 }}
-        >
-          Re-layout
-        </button>
-      </div>
-
-      <div
-        ref={containerRef}
-        style={{
-          height: 520,
-          width: "100%",
-          border: "1px solid #eee",
-          borderRadius: 12,
-          background: "white",
-          cursor: "grab"
-        }}
-      />
-    </div>
+    <div
+      ref={containerRef}
+      style={{
+        height: 520,
+        width: "100%",
+        border: "1px solid #eee",
+        borderRadius: 12,
+        background: "white",
+        cursor: "grab"
+      }}
+    />
   );
 }

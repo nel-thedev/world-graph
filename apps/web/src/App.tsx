@@ -130,7 +130,7 @@ export default function App() {
     setError(null);
     setGraphData(null);
     try {
-      const data = await apiGet<GraphPayload>(`/people/${encodeURIComponent(personId)}/graph?limitEvents=25`);
+      const data = await apiGet<GraphPayload>(`/people/${encodeURIComponent(personId)}/neighborhood?limitEvents=25&limitPeople=60`);
       setGraphData(data);
     } catch (e: any) {
       setError(e.message || String(e));
