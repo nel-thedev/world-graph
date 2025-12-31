@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { Graph, GraphPayload } from "./Graph";
 
 type Person = { id: string; name: string };
 
@@ -64,6 +65,8 @@ export default function App() {
 
   const [error, setError] = useState<string | null>(null);
 
+  const [graphData, setGraphData] = useState<GraphPayload | null>(null);
+
   const canLoadConnections = useMemo(() => !!selectedPerson?.id, [selectedPerson]);
 
   async function runSearch() {
@@ -123,6 +126,17 @@ export default function App() {
     }
   }
 
+  async function loadGraph(personId: string) {
+    setError(null);
+    setGraphData(null);
+    try {
+      const data = await apiGet<GraphPayload>(`/people/${encodeURIComponent(personId)}/graph?limitEvents=25`);
+      setGraphData(data);
+    } catch (e: any) {
+      setError(e.message || String(e));
+    }
+  }  
+
   useEffect(() => {
     runSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,6 +178,7 @@ export default function App() {
                     onClick={() => {
                       setSelectedPerson(p);
                       loadConnections(p.id);
+                      loadGraph(p.id);
                     }}
                     style={{
                       width: "100%",
@@ -315,6 +330,32 @@ export default function App() {
               )}
             </div>
           </div>
+        </div>
+      )}
+      {selectedPerson && (
+        <div style={{
+          height: 520,
+          width: "100%",
+          border: "1px solid #eee",
+          borderRadius: 12,
+          background: "white",
+          cursor: "grab"
+        }}>
+          <h3 style={{ marginTop: 0 }}>
+            Graph <span style={{ opacity: 0.7 }}>— {selectedPerson.name}</span>
+          </h3>
+          <Graph
+            data={graphData}
+            onSelectNode={(n) => {
+              // For now: if you click a PERSON node, refocus to that person
+              if (n.type === "person") {
+                setSelectedPerson({ id: n.id, name: n.label });
+                loadConnections(n.id);
+                loadGraph(n.id);
+              }
+              // If it's an event, we can later expand event-specific view
+            }}
+          />
         </div>
       )}
     </div>
