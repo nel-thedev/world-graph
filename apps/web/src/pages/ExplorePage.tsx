@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "../app/AppShell";
 import type { Focus, GraphDTO } from "../app/types";
 import { searchPeople } from "../api/search";
-import { fetchNeighborhood } from "../api/graph";
+import { fetchEventNeighborhood, fetchPersonNeighborhood } from "../api/graph";
 import { SearchBar } from "../components/SearchBar";
 import { GraphView } from "../components/GraphView";
 import { LeftPanel } from "../components/LeftPanel";
@@ -16,29 +16,29 @@ export function ExplorePage() {
   // When focus changes, load neighborhood graph (v1: only supports person focus)
   useEffect(() => {
     let cancelled = false;
-
+  
     async function run() {
       setError(null);
       if (!focus) return;
-
-      if (focus.kind !== "person") {
-        // v1: if event clicked, do nothing for now (later: event neighborhood)
-        return;
-      }
-
+  
       try {
-        const dto = await fetchNeighborhood(focus.id, 25, 60);
+        const dto =
+          focus.kind === "person"
+            ? await fetchPersonNeighborhood(focus.id, 25, 60)
+            : await fetchEventNeighborhood(focus.id, 60, 25);
+  
         if (!cancelled) setGraph(dto);
       } catch (e: any) {
         if (!cancelled) setError(e.message || String(e));
       }
     }
-
+  
     void run();
     return () => {
       cancelled = true;
     };
   }, [focus]);
+  
 
   return (
     <AppShell
