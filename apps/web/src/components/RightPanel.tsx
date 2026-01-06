@@ -49,15 +49,47 @@ export function RightPanel(props: {
         <div style={{ opacity: 0.7 }}>Select a node to see details.</div>
       ) : (
         <div>
-          <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>
-            {props.focus.label ?? props.focus.id}
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.6, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            {props.focus.kind}
+          {/* Header Image & Title */}
+          <div style={{ marginBottom: 16 }}>
+            {details?.thumbnailUrl && !loading ? (
+              <div style={{
+                marginBottom: 12,
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "#f0f0f0",
+                width: "100%",
+                height: 200,
+              }}>
+                <img
+                  src={details.thumbnailUrl}
+                  alt={details.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block"
+                  }}
+                />
+              </div>
+            ) : null}
+
+            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.2 }}>
+              {props.focus.label ?? props.focus.id}
+            </div>
+            <div style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: props.focus.kind === 'person' ? '#2563eb' : '#dc2626',
+              marginTop: 4,
+              textTransform: "uppercase",
+              letterSpacing: 1
+            }}>
+              {props.focus.kind}
+            </div>
           </div>
 
           {/* Details Section */}
-          <div style={{ marginTop: 16 }}>
+          <div>
             {loading ? (
               <div style={{ opacity: 0.5, fontSize: 13, fontStyle: "italic" }}>Loading details...</div>
             ) : details ? (
@@ -167,3 +199,4 @@ export function RightPanel(props: {
     </Panel>
   );
 }
+

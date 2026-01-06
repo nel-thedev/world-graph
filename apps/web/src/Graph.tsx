@@ -87,11 +87,39 @@ export function Graph({ data, focus, onSelectNode }: Props) {
     const n = cy.getElementById(focus.id);
     if (n.nonempty()) {
       cy.elements().removeClass("dim focused");
-      n.addClass("focused");
-      n.closedNeighborhood().addClass("focused");
-      cy.elements().not(n.closedNeighborhood()).addClass("dim");
+
+      // If focusing a PERSON, highlight connected people through events
+      if (focus.kind === "person") {
+        // 1. Get all events this person is connected to
+        const connectedEvents = n.neighborhood('node[type="event"]');
+
+        // 2. Get all people connected to those events (2-hop: Person → Event → Person)
+        const connectedPeople = connectedEvents.neighborhood('node[type="person"]');
+
+        // 3. Highlight: the person + their events + people who share those events
+        const toHighlight = n.union(connectedEvents).union(connectedPeople);
+
+        toHighlight.addClass("focused");
+
+        // Also highlight the edges connecting them
+        const relevantEdges = cy.edges().filter((edge) => {
+          const src = edge.source();
+          const tgt = edge.target();
+          return toHighlight.contains(src) && toHighlight.contains(tgt);
+        });
+        relevantEdges.addClass("focused");
+
+        // Dim everything else
+        cy.elements().not(toHighlight.union(relevantEdges)).addClass("dim");
+      } else {
+        // For events, just show direct neighborhood (people who participated)
+        n.addClass("focused");
+        n.closedNeighborhood().addClass("focused");
+        cy.elements().not(n.closedNeighborhood()).addClass("dim");
+      }
     }
   }, [focus, elements]); // Run when focus changes OR elements change (new nodes arrive)
+
 
   useEffect(() => {
     const el = containerRef.current;
@@ -113,10 +141,10 @@ export function Graph({ data, focus, onSelectNode }: Props) {
 
       // Find spatially close nodes (potential overlaps)
       const p = n.position();
-      const radius = 100; // Look for nodes within 100px
+      const radius = 40; // Collision only (Nodes are 26px + borders)
 
       const nearby = cy.nodes().filter((x) => {
-        if (x.id() === nodeId) return true;
+        if (x.id() === nodeId) return true; // Always include self
         const pos = x.position();
         const dist = Math.sqrt(Math.pow(pos.x - p.x, 2) + Math.pow(pos.y - p.y, 2));
         return dist < radius;
@@ -124,25 +152,34 @@ export function Graph({ data, focus, onSelectNode }: Props) {
 
       if (nearby.length <= 1) return; // Only self found
 
-      cy.layout({
+      // Lock the dragged node so IT stays where the user put it
+      n.lock();
+
+      const layout = cy.layout({
         name: "fcose",
         animate: true,
-        animationDuration: 300,
+        animationDuration: 200, // Snappier
         fit: false,
-        padding: 30,
+        padding: 10,
         eles: nearby, // Only adjust these nodes
         quality: "default",
         randomize: false,
 
         // Physics settings for "Repulsion Only"
-        nodeRepulsion: 6500,  // Strong repulsion
+        nodeRepulsion: 6000,
+        nodeSeparation: 50, // Try to keep them this far apart
         edgeElasticity: 0,    // No spring effect (don't pull connected nodes)
-        idealEdgeLength: 100, // Target distance (kept primarily for repulsion calcs)
         gravity: 0,           // Don't pull to center
         gravityRange: 0,
-        numIter: 1000,
-        coolingFactor: 0.99
-      } as any).run();
+        numIter: 500,
+        coolingFactor: 0.9,
+
+        stop: () => {
+          n.unlock(); // Unlock after settling
+        }
+      } as any);
+
+      layout.run();
     };
 
     if (!cyRef.current) {
@@ -162,40 +199,66 @@ export function Graph({ data, focus, onSelectNode }: Props) {
             selector: "node",
             style: {
               label: "data(label)",
-              "font-size": 12,
-              color: "#111",
-              "text-valign": "center",
+              "font-size": 10, // Slightly smaller
+              "font-weight": "bold",
+              color: "#000",
+
+              // Move text OUTSIDE the node
+              "text-valign": "bottom",
               "text-halign": "center",
+              "text-margin-y": 6, // Spacing from node
+
               "text-wrap": "wrap",
-              "text-max-width": 150,
-              "background-color": "#fff",
+              "text-max-width": 80, // Tighter wrap for names below
+
+              // Legibility halo (so lines under text don't kill readability)
+              "text-outline-color": "#fff",
+              "text-outline-width": 3,
+
+              "background-color": "#fff", // default
               "border-width": 2,
-              "border-color": "#222",
-              width: 48,
-              height: 48,
+              "border-color": "#555",
+
+              width: 24, // Smaller nodes since they don't hold text
+              height: 24,
+
               events: "yes",
-              "transition-property": "opacity, border-width, border-color",
+              "transition-property": "opacity, border-width, border-color, background-color, width, height",
               "transition-duration": "180ms"
+            } as any
+          },
+          {
+            selector: 'node[type="person"]',
+            style: {
+              shape: "ellipse",
+              width: 24,
+              height: 24,
+              "background-color": "#e0f2fe", // Light Blue
+              "border-color": "#0284c7"      // Strong Blue
             } as any
           },
           {
             selector: 'node[type="event"]',
             style: {
-              shape: "diamond",
-              width: 42,
-              height: 42,
-              "border-color": "#555"
+              shape: "ellipse", // Everything is a circle now
+              width: 55,        // Large Hub
+              height: 55,
+              "background-color": "#fff7ed", // Very Light Amber
+              "border-color": "#ea580c",     // Burnt Orange
+              "border-width": 4,             // Thicker border for hubs
+              "font-size": 11,               // Slightly larger text for hubs
+              "text-margin-y": 8
             } as any
           },
           {
             selector: "edge",
             style: {
               width: "mapData(weight, -10, 10, 1, 6)",
-              "line-color": "#999",
+              "line-color": "#cbd5e1", // Slate 300
               "target-arrow-shape": "none",
               "curve-style": "bezier",
               events: "no",
-              opacity: 0.9,
+              opacity: 0.8,
               "transition-property": "opacity, width",
               "transition-duration": "180ms"
             } as any
@@ -215,7 +278,13 @@ export function Graph({ data, focus, onSelectNode }: Props) {
           },
           {
             selector: ".focused",
-            style: { "border-width": 4 } as any
+            style: {
+              "border-width": 4,
+              "border-color": "#2563eb", // Bright Blue Focus
+              "shadow-blur": 10,
+              "shadow-color": "#2563eb",
+              "shadow-opacity": 0.5
+            } as any
           },
           {
             selector: ".dim",

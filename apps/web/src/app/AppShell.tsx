@@ -7,7 +7,13 @@ export function AppShell(props: {
   center: ReactNode;
 }) {
   return (
-    <div style={{ position: "relative", height: "100vh", width: "100vw", overflow: "hidden" }}>
+    <div style={{
+      position: "relative",
+      height: "100vh",
+      width: "100vw",
+      overflow: "hidden",
+      background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)" // Subtle gradient
+    }}>
       {/* Graph background */}
       <div style={{ position: "absolute", inset: 0 }}>{props.center}</div>
 

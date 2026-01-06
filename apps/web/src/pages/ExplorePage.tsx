@@ -5,7 +5,6 @@ import { searchPeople } from "../api/search";
 import { fetchEventNeighborhood, fetchPersonNeighborhood } from "../api/graph";
 import { SearchBar } from "../components/SearchBar";
 import { GraphView } from "../components/GraphView";
-import { LeftPanel } from "../components/LeftPanel";
 import { RightPanel } from "../components/RightPanel";
 
 export function ExplorePage() {
@@ -51,7 +50,7 @@ export function ExplorePage() {
           onPick={(item) => setFocus({ kind: "person", id: item.id, label: item.name })}
         />
       }
-      left={<LeftPanel focus={focus} />}
+      left={null}
       right={
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {error ? (
