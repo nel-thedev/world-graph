@@ -25,12 +25,15 @@ export type GraphDTO = {
   }[];
 };
 
+import { Focus } from "./app/types";
+
 type Props = {
   data: GraphDTO | null;
+  focus?: Focus | null;
   onSelectNode?: (node: { type: "person" | "event"; id: string; label: string }) => void;
 };
 
-export function Graph({ data, onSelectNode }: Props) {
+export function Graph({ data, focus, onSelectNode }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
 
@@ -71,6 +74,25 @@ export function Graph({ data, onSelectNode }: Props) {
     return [...nodes, ...edges];
   }, [data]);
 
+  // Handle Focus Styling
+  useEffect(() => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+
+    if (!focus) {
+      cy.elements().removeClass("dim focused");
+      return;
+    }
+
+    const n = cy.getElementById(focus.id);
+    if (n.nonempty()) {
+      cy.elements().removeClass("dim focused");
+      n.addClass("focused");
+      n.closedNeighborhood().addClass("focused");
+      cy.elements().not(n.closedNeighborhood()).addClass("dim");
+    }
+  }, [focus, elements]); // Run when focus changes OR elements change (new nodes arrive)
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -82,25 +104,44 @@ export function Graph({ data, onSelectNode }: Props) {
         animationDuration: 700,
         fit: true,
         padding: 30
-      }).run();
+      } as any).run();
     };
 
-    const runRelaxLayout = (cy: Core, nodeId: string) => {
+    const runOverlapRemoval = (cy: Core, nodeId: string) => {
       const n = cy.getElementById(nodeId);
       if (!n || n.empty()) return;
 
-      const neighborhood = n.closedNeighborhood();
+      // Find spatially close nodes (potential overlaps)
+      const p = n.position();
+      const radius = 100; // Look for nodes within 100px
+
+      const nearby = cy.nodes().filter((x) => {
+        if (x.id() === nodeId) return true;
+        const pos = x.position();
+        const dist = Math.sqrt(Math.pow(pos.x - p.x, 2) + Math.pow(pos.y - p.y, 2));
+        return dist < radius;
+      });
+
+      if (nearby.length <= 1) return; // Only self found
 
       cy.layout({
         name: "fcose",
         animate: true,
-        animationDuration: 450,
-        fit: false, // don't snap camera on relax
+        animationDuration: 300,
+        fit: false,
         padding: 30,
-        eles: neighborhood,
+        eles: nearby, // Only adjust these nodes
         quality: "default",
         randomize: false,
-        coolingFactor: 0.95
+
+        // Physics settings for "Repulsion Only"
+        nodeRepulsion: 6500,  // Strong repulsion
+        edgeElasticity: 0,    // No spring effect (don't pull connected nodes)
+        idealEdgeLength: 100, // Target distance (kept primarily for repulsion calcs)
+        gravity: 0,           // Don't pull to center
+        gravityRange: 0,
+        numIter: 1000,
+        coolingFactor: 0.99
       } as any).run();
     };
 
@@ -111,7 +152,6 @@ export function Graph({ data, onSelectNode }: Props) {
 
         userPanningEnabled: true,
         userZoomingEnabled: true,
-        userPinchingEnabled: true,
         boxSelectionEnabled: false,
         autoungrabify: false,
         autounselectify: false,
@@ -136,7 +176,7 @@ export function Graph({ data, onSelectNode }: Props) {
               events: "yes",
               "transition-property": "opacity, border-width, border-color",
               "transition-duration": "180ms"
-            }
+            } as any
           },
           {
             selector: 'node[type="event"]',
@@ -145,7 +185,7 @@ export function Graph({ data, onSelectNode }: Props) {
               width: 42,
               height: 42,
               "border-color": "#555"
-            }
+            } as any
           },
           {
             selector: "edge",
@@ -158,28 +198,28 @@ export function Graph({ data, onSelectNode }: Props) {
               opacity: 0.9,
               "transition-property": "opacity, width",
               "transition-duration": "180ms"
-            }
+            } as any
           },
           {
             selector: 'edge[status="PENDING"]',
             style: {
               "line-style": "dashed",
               opacity: 0.6
-            }
+            } as any
           },
           {
             selector: 'edge[status="REJECTED"]',
             style: {
               opacity: 0.25
-            }
+            } as any
           },
           {
             selector: ".focused",
-            style: { "border-width": 4 }
+            style: { "border-width": 4 } as any
           },
           {
             selector: ".dim",
-            style: { opacity: 0.2 }
+            style: { opacity: 0.2 } as any
           }
         ]
       });
@@ -215,9 +255,9 @@ export function Graph({ data, onSelectNode }: Props) {
 
       cy.on("dragfree", "node", (evt) => {
         const nodeId = evt.target.id();
-        // only relax if it actually moved
+        // only resolve overlap if it actually moved
         if (!didDrag) return;
-        setTimeout(() => runRelaxLayout(cy, nodeId), 0);
+        setTimeout(() => runOverlapRemoval(cy, nodeId), 20);
       });
 
       cy.on("tap", "node", (evt) => {
@@ -238,33 +278,63 @@ export function Graph({ data, onSelectNode }: Props) {
         // Immediate feedback: center camera on clicked node
         cy.animate({ center: { eles: n }, duration: 220 }, { easing: "ease-in-out" });
 
-        cy.elements().removeClass("dim focused");
-        n.addClass("focused");
-        n.closedNeighborhood().addClass("focused");
-        cy.elements().not(n.closedNeighborhood()).addClass("dim");
-
+        // Focus styling is now handled by the useEffect above reacting to props change
+        // But we still fire the event to update the parent
         onSelectNode?.({ type, id, label });
       });
 
       cy.on("tap", (evt) => {
         if (evt.target !== cy) return;
-        cy.elements().removeClass("dim focused");
+        // cy.elements().removeClass("dim focused");
+        // We probably don't want to clear focus on background click if we want to "explore"
+        // But if user wants to clear selection?
+        // Let's leave it for now.
       });
     } else {
       const cy = cyRef.current;
 
-      const prevPan = cy.pan();
-      const prevZoom = cy.zoom();
+      // MAP BEHAVIOR:
+      // 1. Lock all existing nodes so they function as anchors and don't move.
+      // 2. Add only NEW nodes/edges from the incoming data (Merge).
+      // 3. Run layout. Since old nodes are locked, only new nodes will be placed around them.
+      // 4. (Optional) Unlock after layout if we want them to be movable again, 
+      //    but keeping them locked prevents "drift" on subsequent updates. 
+      //    Let's unlock on 'layoutstop' so user can manually drag them.
 
-      cy.elements().remove();
-      cy.add(elements);
+      cy.nodes().lock();
 
-      cy.pan(prevPan);
-      cy.zoom(prevZoom);
+      const existingNodeIds = new Set(cy.nodes().map((n) => n.id()));
+      const existingEdgeIds = new Set(cy.edges().map((e) => e.id()));
 
-      runFullLayout(cy);
+      const nodesToAdd = elements.filter((e) => !('source' in e.data) && !existingNodeIds.has(e.data.id));
+      const edgesToAdd = elements.filter((e) => 'source' in e.data && !existingEdgeIds.has(e.data.id));
+
+      if (nodesToAdd.length > 0 || edgesToAdd.length > 0) {
+        cy.add([...nodesToAdd, ...edgesToAdd]);
+
+        const layout = cy.layout({
+          name: "fcose",
+          animate: true,
+          animationDuration: 500,
+          randomize: false,
+          fit: false,             // Don't auto-fit, let user pan/zoom
+          padding: 30,
+          nodeDimensionsIncludeLabels: true,
+          quality: "default",
+          // Layout only affects new nodes naturally if old ones are locked?
+          // Actually fcose respects locks.
+          stop: () => {
+            cy.nodes().unlock(); // Allow user manipulation after layout settles
+          }
+        } as any);
+
+        layout.run();
+      } else {
+        // Just unlock if we didn't add anything (unlikely path if data changed)
+        cy.nodes().unlock();
+      }
     }
-  }, [elements, onSelectNode]);
+  }, [elements, onSelectNode]); // REMOVE focus from dependency array here, handled in separate effect
 
   return (
     <div

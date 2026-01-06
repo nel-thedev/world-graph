@@ -7,6 +7,7 @@ import { searchRoutes } from "./routes/search.js";
 import { peopleRoutes } from "./routes/people.js";
 import { claimsRoutes } from "./routes/claims.js";
 import { eventsRoutes } from "./routes/events.js";
+import { entitiesRoutes } from "./routes/entities.js";
 
 const app = Fastify({ logger: true });
 
@@ -17,6 +18,7 @@ await app.register(searchRoutes);
 await app.register(peopleRoutes);
 await app.register(claimsRoutes);
 await app.register(eventsRoutes);
+await app.register(entitiesRoutes);
 
 app.addHook("onClose", async () => {
   await closeDriver();

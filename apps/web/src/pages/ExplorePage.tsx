@@ -16,29 +16,29 @@ export function ExplorePage() {
   // When focus changes, load neighborhood graph (v1: only supports person focus)
   useEffect(() => {
     let cancelled = false;
-  
+
     async function run() {
       setError(null);
       if (!focus) return;
-  
+
       try {
         const dto =
           focus.kind === "person"
             ? await fetchPersonNeighborhood(focus.id, 25, 60)
             : await fetchEventNeighborhood(focus.id, 60, 25);
-  
+
         if (!cancelled) setGraph(dto);
       } catch (e: any) {
         if (!cancelled) setError(e.message || String(e));
       }
     }
-  
+
     void run();
     return () => {
       cancelled = true;
     };
   }, [focus]);
-  
+
 
   return (
     <AppShell
@@ -69,7 +69,7 @@ export function ExplorePage() {
           <RightPanel focus={focus} graph={graph} onFocus={setFocus} />
         </div>
       }
-      center={<GraphView graph={graph} onFocus={(f) => setFocus(f)} />}
+      center={<GraphView graph={graph} focus={focus} onFocus={(f) => setFocus(f)} />}
     />
   );
 }
